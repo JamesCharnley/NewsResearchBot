@@ -1,0 +1,279 @@
+PiSignalWatch User Manual
+=========================
+
+Overview
+--------
+PiSignalWatch is a modular .NET background worker that collects content from configured sources,
+processes and scores that content, and then sends summaries/alerts to output channels.
+
+This manual gives a full setup-and-operations guide beyond the short README notes.
+
+
+1) Prerequisites
+----------------
+Before setup, make sure the host machine has:
+
+- Operating system: Linux, macOS, or Windows (Raspberry Pi OS for Pi deployments).
+- .NET SDK installed (recommended: latest LTS compatible with the project).
+- Network access to the APIs/services you configure.
+- A shell/terminal and permission to create/edit files in the project directory.
+
+Optional but recommended:
+
+- `jq` for JSON inspection.
+- `screen` or `tmux` for long-running terminal sessions.
+- `systemd` familiarity for Raspberry Pi production operation.
+
+
+2) Project Structure (Quick Orientation)
+-----------------------------------------
+Important paths in this repository:
+
+- `src/PiSignalWatch/Program.cs`
+  Entry point. Hosts and starts the worker service.
+
+- `src/PiSignalWatch/Worker.cs`
+  Main execution loop (collect -> process -> output).
+
+- `src/PiSignalWatch/Config/*`
+  Strongly typed configuration objects loaded from appsettings.
+
+- `src/PiSignalWatch/Collectors/Collectors.cs`
+  Source collection logic.
+
+- `src/PiSignalWatch/Processing/Processing.cs`
+  Processing/scoring/filtering logic.
+
+- `src/PiSignalWatch/Outputs/Outputs.cs`
+  Output delivery channels (Discord/Telegram/Email/etc. depending on config).
+
+- `src/PiSignalWatch/Storage/Storage.cs`
+  Persistence and de-duplication support.
+
+- `appsettings.example.json`
+  Template configuration file.
+
+
+3) Initial Setup
+----------------
+Step A: Clone and enter project directory
+
+1. Clone your repository normally.
+2. Change into the project root (the folder containing `PiSignalWatch.sln`).
+
+Step B: Create runtime configuration
+
+1. Copy template:
+
+   cp appsettings.example.json appsettings.json
+
+2. Edit `appsettings.json` with your source topics, thresholds, schedule, and output settings.
+
+Step C: Set secrets via environment variables
+
+Set these (as needed by enabled integrations):
+
+- X_BEARER_TOKEN
+- OPENAI_API_KEY
+- DISCORD_WEBHOOK_URL
+- TELEGRAM_BOT_TOKEN
+- EMAIL_SMTP_PASSWORD
+
+Linux/macOS example (temporary for current shell):
+
+export X_BEARER_TOKEN="..."
+export OPENAI_API_KEY="..."
+export DISCORD_WEBHOOK_URL="..."
+export TELEGRAM_BOT_TOKEN="..."
+export EMAIL_SMTP_PASSWORD="..."
+
+Persistent (recommended): place in systemd service environment, `.env` loader, or secure secret store.
+Never commit secrets to git.
+
+
+4) Build and Run
+----------------
+From repository root:
+
+1. Restore dependencies:
+
+   dotnet restore
+
+2. Build project:
+
+   dotnet build
+
+3. Run worker:
+
+   dotnet run --project src/PiSignalWatch
+
+Combined one-liner:
+
+   dotnet restore && dotnet build && dotnet run --project src/PiSignalWatch
+
+Expected behavior on successful startup:
+
+- App starts host.
+- Configuration binds without errors.
+- Worker begins polling/collecting on configured interval.
+- Logs show collection + processing + output actions.
+
+
+5) Running as a Service on Raspberry Pi (systemd)
+--------------------------------------------------
+Recommended for production reliability.
+
+Step A: Publish optimized build for Pi ARM64
+
+   dotnet publish src/PiSignalWatch -c Release -r linux-arm64 --self-contained false
+
+Step B: Create service unit file (example)
+
+Path: `/etc/systemd/system/pisignalwatch.service`
+
+Example content:
+
+[Unit]
+Description=PiSignalWatch Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/pisignalwatch
+ExecStart=/usr/bin/dotnet /opt/pisignalwatch/PiSignalWatch.dll
+Restart=always
+RestartSec=10
+User=pi
+Environment=X_BEARER_TOKEN=...
+Environment=OPENAI_API_KEY=...
+Environment=DISCORD_WEBHOOK_URL=...
+Environment=TELEGRAM_BOT_TOKEN=...
+Environment=EMAIL_SMTP_PASSWORD=...
+
+[Install]
+WantedBy=multi-user.target
+
+Step C: Enable and start
+
+sudo systemctl daemon-reload
+sudo systemctl enable pisignalwatch
+sudo systemctl start pisignalwatch
+
+Step D: Watch logs
+
+journalctl -u pisignalwatch -f
+
+
+6) Configuration Guidance
+-------------------------
+General recommendations:
+
+- Start with a narrow set of sources and topics.
+- Keep intervals conservative to avoid rate limits.
+- Add one output channel first, then expand.
+- Tune thresholds after observing real-world results for a few days.
+
+When editing configuration:
+
+1. Validate JSON format (no trailing commas unless allowed by parser settings).
+2. Restart service/app after changes.
+3. Confirm logs show expected loaded values and no binding errors.
+
+
+7) Secrets and Security Best Practices
+--------------------------------------
+- Never store credentials directly in tracked files.
+- Use per-service, least-privilege API keys where possible.
+- Rotate keys periodically.
+- Keep Raspberry Pi patched and behind firewall/NAT.
+- Prefer SSH keys over password login.
+- Restrict file permissions on deployment directories.
+
+
+8) Verification Checklist (First Successful Deployment)
+--------------------------------------------------------
+Use this checklist after first setup:
+
+[ ] `dotnet restore` succeeds
+[ ] `dotnet build` succeeds
+[ ] app starts with no configuration exceptions
+[ ] collector fetches data from at least one source
+[ ] processor produces at least one scored/filtered item
+[ ] output sends a test notification to chosen channel
+[ ] duplicate suppression behaves as expected across runs
+
+If all seven are true, baseline deployment is healthy.
+
+
+9) Troubleshooting
+------------------
+Issue: App fails at startup with config/binding error
+- Cause: malformed `appsettings.json` or missing required sections.
+- Fix: compare against `appsettings.example.json`, validate JSON, restart.
+
+Issue: No collected items
+- Cause: bad source credentials, restrictive filters, or source downtime.
+- Fix: verify API token env vars, relax filters temporarily, inspect source connectivity.
+
+Issue: No outbound alerts
+- Cause: output channel misconfiguration or missing secrets.
+- Fix: verify webhook/bot/SMTP values and test channel manually.
+
+Issue: Too many duplicates or too much noise
+- Cause: dedupe or threshold values not tuned.
+- Fix: increase strictness in processing thresholds and inspect storage behavior.
+
+Issue: Service keeps restarting under systemd
+- Cause: startup crash or missing runtime dependency.
+- Fix: `journalctl -u pisignalwatch -n 200` and resolve root exception.
+
+
+10) Update and Maintenance Workflow
+-----------------------------------
+For ongoing maintenance:
+
+1. Pull latest code.
+2. Rebuild/publish.
+3. Backup current config.
+4. Deploy new binaries.
+5. Restart service.
+6. Monitor logs for at least one polling cycle.
+7. Verify alerts still deliver.
+
+Recommended cadence:
+
+- Weekly: check logs and disk usage.
+- Monthly: rotate tokens/secrets where possible.
+- Quarterly: review source/topic relevance and threshold quality.
+
+
+11) Operational Tips
+--------------------
+- Keep a dedicated test topic/source for safe validation.
+- Add new sources one at a time to isolate failures quickly.
+- Use structured logging and timestamps for faster incident response.
+- Save a known-good copy of `appsettings.json` after stable tuning.
+
+
+12) Quick Command Reference
+---------------------------
+Setup:
+
+cp appsettings.example.json appsettings.json
+
+Build and run:
+
+dotnet restore
+dotnet build
+dotnet run --project src/PiSignalWatch
+
+Publish for Pi:
+
+dotnet publish src/PiSignalWatch -c Release -r linux-arm64 --self-contained false
+
+Service logs:
+
+journalctl -u pisignalwatch -f
+
+
+End of manual.
