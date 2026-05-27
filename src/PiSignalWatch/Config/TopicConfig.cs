@@ -1,0 +1,1 @@
+namespace PiSignalWatch.Config; public class TopicConfig{public string Name{get;set;}=""; public List<string> Keywords{get;set;}=new();}
