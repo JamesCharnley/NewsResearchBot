@@ -91,14 +91,30 @@ Set these (as needed by enabled integrations):
 
 Linux/macOS example (temporary for current shell):
 
-export X_BEARER_TOKEN="..."
-export OPENAI_API_KEY="..."
-export DISCORD_WEBHOOK_URL="..."
-export TELEGRAM_BOT_TOKEN="..."
-export EMAIL_SMTP_PASSWORD="..."
+export X_BEARER_TOKEN="x_api_bearer_PLACEHOLDER"
+export OPENAI_API_KEY="sk-proj-PLACEHOLDER"
+export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/PLACEHOLDER"
+export TELEGRAM_BOT_TOKEN="123456789:PLACEHOLDER"
+export EMAIL_SMTP_PASSWORD="smtp-password-PLACEHOLDER"
+
+Windows PowerShell example (temporary for current session):
+
+$env:X_BEARER_TOKEN="x_api_bearer_PLACEHOLDER"
+$env:OPENAI_API_KEY="sk-proj-PLACEHOLDER"
+$env:DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/PLACEHOLDER"
+$env:TELEGRAM_BOT_TOKEN="123456789:PLACEHOLDER"
+$env:EMAIL_SMTP_PASSWORD="smtp-password-PLACEHOLDER"
+
+`.env` file example (if you use a loader such as `dotenv` or your own bootstrap script):
+
+X_BEARER_TOKEN=x_api_bearer_PLACEHOLDER
+OPENAI_API_KEY=sk-proj-PLACEHOLDER
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/PLACEHOLDER
+TELEGRAM_BOT_TOKEN=123456789:PLACEHOLDER
+EMAIL_SMTP_PASSWORD=smtp-password-PLACEHOLDER
 
 Persistent (recommended): place in systemd service environment, `.env` loader, or secure secret store.
-Never commit secrets to git.
+Never commit real secrets to git (placeholder values are fine in docs/templates).
 
 
 4) Build and Run
