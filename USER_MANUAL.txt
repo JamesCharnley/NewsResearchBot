@@ -14,9 +14,19 @@ This manual gives a full setup-and-operations guide beyond the short README note
 Before setup, make sure the host machine has:
 
 - Operating system: Linux, macOS, or Windows (Raspberry Pi OS for Pi deployments).
-- .NET SDK installed (recommended: latest LTS compatible with the project).
+- .NET 8 SDK installed (required for this repo, target framework is `net8.0`).
+- .NET 8 Runtime installed on any machine that will run published builds.
 - Network access to the APIs/services you configure.
 - A shell/terminal and permission to create/edit files in the project directory.
+- IDE tooling for C#: Visual Studio 2022 17.8+ (with .NET workload), Rider 2024.1+, or VS Code with C# Dev Kit.
+
+
+
+IDE sanity check (recommended before opening the solution):
+
+- `dotnet --info` should report an installed SDK version `8.x`.
+- `dotnet --list-sdks` should include at least one `8.0.xxx` SDK entry.
+- Open `PiSignalWatch.sln` (not just an individual `.cs` file) so project references resolve correctly.
 
 Optional but recommended:
 
