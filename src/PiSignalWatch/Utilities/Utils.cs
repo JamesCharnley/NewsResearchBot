@@ -1,0 +1,3 @@
+namespace PiSignalWatch.Utilities; using System.Security.Cryptography; using System.Text;
+public static class Hashing{public static string Sha256(string i){var b=SHA256.HashData(Encoding.UTF8.GetBytes(i??"")); return Convert.ToHexString(b);}}
+public interface IDateTimeProvider{DateTimeOffset UtcNow{get;}} public class SystemDateTimeProvider:IDateTimeProvider{public DateTimeOffset UtcNow=>DateTimeOffset.UtcNow;}

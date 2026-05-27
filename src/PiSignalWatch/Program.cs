@@ -1,0 +1,12 @@
+using Microsoft.Extensions.Options;
+using PiSignalWatch;
+using PiSignalWatch.Collectors; using PiSignalWatch.Config; using PiSignalWatch.Outputs; using PiSignalWatch.Processing; using PiSignalWatch.Storage; using PiSignalWatch.Utilities;
+var b=Host.CreateApplicationBuilder(args); b.Configuration.AddEnvironmentVariables();
+b.Services.Configure<AppSettings>(b.Configuration.GetSection("PiSignalWatch"));
+b.Services.AddSingleton<IDateTimeProvider,SystemDateTimeProvider>(); b.Services.AddSingleton<StateStore>(); b.Services.AddSingleton<IStorageProvider,JsonFileStorageProvider>();
+b.Services.AddSingleton<IProcessor,KeywordMatcher>(); b.Services.AddSingleton<IProcessor,Deduplicator>(); b.Services.AddSingleton<IProcessor,RelevanceScorer>();
+b.Services.AddSingleton<DigestBuilder>(); b.Services.AddSingleton<OpenAiSummariser>();
+b.Services.AddHttpClient(); b.Services.AddSingleton<ISourceCollector,RssCollector>(); b.Services.AddSingleton<ISourceCollector,XApiCollector>(); b.Services.AddSingleton<ISourceCollector,RedditCollector>(); b.Services.AddSingleton<ISourceCollector,WebPageCollector>();
+b.Services.AddSingleton<IOutputChannel,DiscordWebhookOutput>(); b.Services.AddSingleton<IOutputChannel,TelegramOutput>(); b.Services.AddSingleton<IOutputChannel,EmailSmtpOutput>();
+b.Services.AddHostedService<Worker>();
+await b.Build().RunAsync();

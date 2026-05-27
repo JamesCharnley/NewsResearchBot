@@ -1,0 +1,5 @@
+namespace PiSignalWatch.Models; public class SourceItem{public string SourceType{get;set;}="";public string Id{get;set;}="";public string Url{get;set;}="";public string Title{get;set;}="";public string Content{get;set;}="";public DateTimeOffset PublishedAt{get;set;}=DateTimeOffset.UtcNow; public string? Author{get;set;}}
+public class TopicMatch{public string Topic{get;set;}=""; public List<string> MatchedKeywords{get;set;}=new();}
+public class ProcessedItem{public SourceItem Source{get;set;}=new(); public List<TopicMatch> TopicMatches{get;set;}=new(); public double Score{get;set;} public bool IsDuplicate{get;set;}}
+public class Digest{public DateTimeOffset GeneratedAt{get;set;}=DateTimeOffset.UtcNow; public List<ProcessedItem> Items{get;set;}=new(); public string Summary{get;set;}="";}
+public class CollectorResult{public List<SourceItem> Items{get;set;}=new();}
