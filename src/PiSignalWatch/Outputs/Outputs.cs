@@ -39,7 +39,7 @@ public class DiscordWebhookOutput(IHttpClientFactory f, IOptions<AppSettings> o)
         response.EnsureSuccessStatusCode();
     }
 
-    internal static string TrimToDiscordLimit(string summary)
+    public static string TrimToDiscordLimit(string summary)
     {
         var value = summary ?? string.Empty;
         if (value.Length <= DiscordMessageLimit)
