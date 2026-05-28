@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Threading.Tasks;
 using PiSignalWatch.Config;
 using PiSignalWatch.Models;
@@ -116,6 +120,38 @@ public class ProcessingTests
         Assert.Equal(12, zeroScore, 5);
     }
 
+    [Fact]
+    public async Task OpenAiSummariserReturnsOnlyOutputText()
+    {
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        var responseJson = """
+        {
+          "object": "response",
+          "status": "completed",
+          "id": "resp_abc",
+          "output": [
+            {
+              "type": "message",
+              "status": "completed",
+              "id": "msg_123",
+              "content": [
+                { "type": "output_text", "text": "Clean digest content" }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var httpClient = new HttpClient(new StaticJsonHandler(responseJson));
+        var summariser = new OpenAiSummariser(new FakeHttpClientFactory(httpClient), NullLogger<OpenAiSummariser>.Instance);
+        var cfg = new AppSettings { OpenAi = new OpenAiConfig { Enabled = true, Model = "gpt-test" } };
+
+        var summary = await summariser.SummariseAsync([], cfg, default);
+
+        Assert.Equal("Clean digest content", summary);
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", null);
+    }
+
     private sealed class FakeDateTimeProvider : IDateTimeProvider
     {
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
@@ -124,5 +160,21 @@ public class ProcessingTests
     private sealed class FixedDateTimeProvider(DateTimeOffset now) : IDateTimeProvider
     {
         public DateTimeOffset UtcNow => now;
+    }
+
+    private sealed class FakeHttpClientFactory(HttpClient client) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => client;
+    }
+
+    private sealed class StaticJsonHandler(string content) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, System.Threading.CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(content, Encoding.UTF8, "application/json")
+            });
+        }
     }
 }

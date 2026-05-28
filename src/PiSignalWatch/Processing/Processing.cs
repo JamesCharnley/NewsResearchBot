@@ -119,22 +119,11 @@ public class OpenAiSummariser(IHttpClientFactory f, ILogger<OpenAiSummariser> lo
         using var doc = JsonDocument.Parse(responseJson);
         var root = doc.RootElement;
 
-        var responseObject = root.TryGetProperty("object", out var objectEl) ? objectEl.GetString() ?? "" : "response";
-        var responseStatus = root.TryGetProperty("status", out var statusEl) ? statusEl.GetString() ?? "" : "unknown";
-        var responseId = root.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "unknown";
-
-        var outputType = "message";
-        var outputStatus = "unknown";
-        var outputId = "unknown";
         var outputText = "";
 
         if (root.TryGetProperty("output", out var outputEl) && outputEl.ValueKind == JsonValueKind.Array && outputEl.GetArrayLength() > 0)
         {
             var firstOutput = outputEl[0];
-            outputType = firstOutput.TryGetProperty("type", out var typeEl) ? typeEl.GetString() ?? outputType : outputType;
-            outputStatus = firstOutput.TryGetProperty("status", out var outputStatusEl) ? outputStatusEl.GetString() ?? outputStatus : outputStatus;
-            outputId = firstOutput.TryGetProperty("id", out var outputIdEl) ? outputIdEl.GetString() ?? outputId : outputId;
-
             if (firstOutput.TryGetProperty("content", out var contentEl) && contentEl.ValueKind == JsonValueKind.Array)
             {
                 foreach (var content in contentEl.EnumerateArray())
@@ -150,7 +139,7 @@ public class OpenAiSummariser(IHttpClientFactory f, ILogger<OpenAiSummariser> lo
             }
         }
 
-        return $"{responseObject}\n{responseStatus}\n{responseId}\n\n\n\n{outputType}\n{outputStatus}\n{outputId}\n{outputText}";
+        return outputText;
     }
 
     string Fallback(List<ProcessedItem> items) =>
