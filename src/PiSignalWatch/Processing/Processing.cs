@@ -94,6 +94,7 @@ public class OpenAiSummariser(IHttpClientFactory f, ILogger<OpenAiSummariser> lo
 
             var prompt = BuildPrompt(items);
             log.LogInformation("Summary prompt sent to GPT:\n{prompt}", prompt);
+            Console.WriteLine($"Summary prompt sent to GPT:\n{prompt}");
 
             var body = new { model = cfg.OpenAi.Model, input = prompt };
             var res = await c.PostAsync(
