@@ -106,15 +106,31 @@ public class Worker : BackgroundService
             var rssResult = await rssCollector.CollectAsync(ct);
             await _storage.SaveRawItemsAsync(rssCollector.Name, rssResult.Items, ct);
 
-            var promotedLinks = rssResult.Items
+            var scoredRssItems = rssResult.Items
                 .Select(item => new
                 {
                     Item = item,
                     Score = ScoreRssByKeywords(item)
                 })
+                .ToList();
+
+            foreach (var entry in scoredRssItems)
+            {
+                _log.LogInformation("RSS entry scored {score}: {title} {url}", entry.Score, entry.Item.Title, entry.Item.Url);
+            }
+
+            var topScoredRssItems = scoredRssItems
                 .Where(x => x.Score > 0)
                 .OrderByDescending(x => x.Score)
                 .Take(TopRssLinksToPromote)
+                .ToList();
+
+            foreach (var entry in topScoredRssItems)
+            {
+                _log.LogInformation("Top RSS score {score}: {title} {url}", entry.Score, entry.Item.Title, entry.Item.Url);
+            }
+
+            var promotedLinks = topScoredRssItems
                 .Select(x => x.Item.Url)
                 .Where(url => !string.IsNullOrWhiteSpace(url))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -130,6 +146,11 @@ public class Worker : BackgroundService
                 .Where(url => !string.IsNullOrWhiteSpace(url))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+            foreach (var webpageUrl in _cfg.Sources.WebPageUrls)
+            {
+                _log.LogInformation("WebPageUrl: {url}", webpageUrl);
+            }
 
             _log.LogInformation("Promoted {count} RSS links into webpage URLs for this cycle", promotedLinks.Count);
         }
