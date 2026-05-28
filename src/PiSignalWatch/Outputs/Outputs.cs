@@ -33,7 +33,7 @@ public class DiscordWebhookOutput(IHttpClientFactory f, IOptions<AppSettings> o,
         }
 
         var message = EnsureMessageContent(TrimToDiscordLimit(d.Summary));
-        log.LogInformation("Sending Discord webhook message: {DiscordMessage}", message);
+        log.LogDebug("Sending Discord webhook message: {DiscordMessage}", message);
         var payload = new { content = message };
         var response = await f.CreateClient().PostAsync(
             url,

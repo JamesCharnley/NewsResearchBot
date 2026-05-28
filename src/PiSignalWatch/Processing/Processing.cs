@@ -93,8 +93,7 @@ public class OpenAiSummariser(IHttpClientFactory f, ILogger<OpenAiSummariser> lo
             c.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
 
             var prompt = BuildPrompt(items);
-            log.LogInformation("Summary prompt sent to GPT:\n{prompt}", prompt);
-            Console.WriteLine($"Summary prompt sent to GPT:\n{prompt}");
+            log.LogDebug("Summary prompt sent to GPT:\n{prompt}", prompt);
 
             var body = new { model = cfg.OpenAi.Model, input = prompt };
             var res = await c.PostAsync(
