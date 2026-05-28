@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PiSignalWatch.Config;
 using PiSignalWatch.Models;
@@ -39,7 +40,8 @@ public class DiscordOutputTests
                 {
                     DiscordWebhookUrl = "https://example.com/webhook"
                 }
-            }));
+            }),
+            NullLogger<DiscordWebhookOutput>.Instance);
 
         await output.SendAsync(new Digest { Summary = new string('b', 2200) }, default);
 
@@ -47,6 +49,13 @@ public class DiscordOutputTests
         using var json = JsonDocument.Parse(handler.Body!);
         var content = json.RootElement.GetProperty("content").GetString();
         Assert.Equal(2000, content!.Length);
+    }
+
+    [Fact]
+    public void UsesFallbackWhenSummaryIsEmpty()
+    {
+        var result = DiscordWebhookOutput.EnsureMessageContent("   ");
+        Assert.Equal("[Digest summary was empty]", result);
     }
 
     private sealed class CaptureHandler : HttpMessageHandler

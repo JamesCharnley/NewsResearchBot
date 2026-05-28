@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PiSignalWatch.Config;
 using PiSignalWatch.Models;
@@ -15,9 +16,10 @@ public interface IOutputChannel
     Task SendAsync(Digest digest, CancellationToken ct);
 }
 
-public class DiscordWebhookOutput(IHttpClientFactory f, IOptions<AppSettings> o) : IOutputChannel
+public class DiscordWebhookOutput(IHttpClientFactory f, IOptions<AppSettings> o, ILogger<DiscordWebhookOutput> log) : IOutputChannel
 {
     private const int DiscordMessageLimit = 2000;
+    private const string EmptyMessageFallback = "[Digest summary was empty]";
 
     public string Name => "discord";
     public bool IsEnabled(AppSettings c) => c.Outputs.EnableDiscord;
@@ -30,7 +32,9 @@ public class DiscordWebhookOutput(IHttpClientFactory f, IOptions<AppSettings> o)
             return;
         }
 
-        var payload = new { content = TrimToDiscordLimit(d.Summary) };
+        var message = EnsureMessageContent(TrimToDiscordLimit(d.Summary));
+        log.LogInformation("Sending Discord webhook message: {DiscordMessage}", message);
+        var payload = new { content = message };
         var response = await f.CreateClient().PostAsync(
             url,
             new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"),
@@ -49,6 +53,11 @@ public class DiscordWebhookOutput(IHttpClientFactory f, IOptions<AppSettings> o)
 
         const string suffix = "...";
         return value[..(DiscordMessageLimit - suffix.Length)] + suffix;
+    }
+
+    public static string EnsureMessageContent(string summary)
+    {
+        return string.IsNullOrWhiteSpace(summary) ? EmptyMessageFallback : summary;
     }
 }
 
