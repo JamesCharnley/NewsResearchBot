@@ -12,6 +12,8 @@ namespace PiSignalWatch;
 
 public class Worker : BackgroundService
 {
+    const int TopRssLinksToPromote = 10;
+
     readonly IEnumerable<ISourceCollector> _collectors;
     readonly IEnumerable<IProcessor> _processors;
     readonly IEnumerable<IOutputChannel> _outputs;
@@ -46,7 +48,10 @@ public class Worker : BackgroundService
         while (!ct.IsCancellationRequested)
         {
             var raw = new List<SourceItem>();
-            foreach (var col in _collectors.Where(x => x.IsEnabled(_cfg)))
+
+            await CollectRssAndPromoteTopLinksAsync(raw, ct);
+
+            foreach (var col in _collectors.Where(x => x.IsEnabled(_cfg) && x.Name != "rss"))
             {
                 try
                 {
@@ -86,5 +91,57 @@ public class Worker : BackgroundService
 
             await Task.Delay(TimeSpan.FromMinutes(_cfg.PollIntervalMinutes), ct);
         }
+    }
+
+    async Task CollectRssAndPromoteTopLinksAsync(List<SourceItem> raw, CancellationToken ct)
+    {
+        var rssCollector = _collectors.FirstOrDefault(x => x.Name == "rss" && x.IsEnabled(_cfg));
+        if (rssCollector == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var rssResult = await rssCollector.CollectAsync(ct);
+            await _storage.SaveRawItemsAsync(rssCollector.Name, rssResult.Items, ct);
+
+            var promotedLinks = rssResult.Items
+                .Select(item => new
+                {
+                    Item = item,
+                    Score = ScoreRssByKeywords(item)
+                })
+                .Where(x => x.Score > 0)
+                .OrderByDescending(x => x.Score)
+                .Take(TopRssLinksToPromote)
+                .Select(x => x.Item.Url)
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (promotedLinks.Count == 0)
+            {
+                return;
+            }
+
+            _cfg.Sources.WebPageUrls = _cfg.Sources.WebPageUrls
+                .Concat(promotedLinks)
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _log.LogInformation("Promoted {count} RSS links into webpage URLs for this cycle", promotedLinks.Count);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "collector fail {c}", rssCollector.Name);
+        }
+    }
+
+    int ScoreRssByKeywords(SourceItem item)
+    {
+        var txt = (item.Title + " " + item.Content).ToLowerInvariant();
+        return _cfg.Topics.Sum(t => t.Keywords.Count(k => txt.Contains(k.ToLowerInvariant())));
     }
 }
