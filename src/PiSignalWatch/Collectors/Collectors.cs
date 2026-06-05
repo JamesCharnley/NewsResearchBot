@@ -1,8 +1,202 @@
-namespace PiSignalWatch.Collectors; using System.ServiceModel.Syndication; using Microsoft.Extensions.Logging; using Microsoft.Extensions.Options; using System.Text.Json; using System.Xml; using PiSignalWatch.Config; using PiSignalWatch.Models; using PiSignalWatch.Storage; using PiSignalWatch.Utilities;
-public interface ISourceCollector{string Name{get;} bool IsEnabled(AppSettings c); Task<CollectorResult> CollectAsync(CancellationToken ct);} 
-public class RssCollector(IHttpClientFactory f,IOptions<AppSettings> o):ISourceCollector{public string Name=>"rss"; public bool IsEnabled(AppSettings c)=>c.Sources.EnableRss; public async Task<CollectorResult> CollectAsync(CancellationToken ct){var outp=new CollectorResult(); foreach(var u in o.Value.Sources.RssFeeds){try{using var s=await f.CreateClient().GetStreamAsync(u,ct); using var xr=XmlReader.Create(s); var feed=SyndicationFeed.Load(xr); if(feed==null) continue; outp.Items.AddRange(feed.Items.Select(i=>new SourceItem{SourceType=Name,Id=i.Id??i.Links.FirstOrDefault()?.Uri.ToString()??Guid.NewGuid().ToString(),Url=i.Links.FirstOrDefault()?.Uri.ToString()??"",Title=i.Title?.Text??"",Content=i.Summary?.Text??i.Content?.ToString()??"",PublishedAt=i.PublishDate}));}catch{}} return outp;}}
-public class XApiCollector(IHttpClientFactory f,IOptions<AppSettings> o,StateStore ss,ILogger<XApiCollector> l):ISourceCollector{public string Name=>"x"; public bool IsEnabled(AppSettings c)=>c.Sources.EnableX; public async Task<CollectorResult> CollectAsync(CancellationToken ct){var token=Environment.GetEnvironmentVariable("X_BEARER_TOKEN"); var res=new CollectorResult(); if(string.IsNullOrWhiteSpace(token)) return res; var st=await ss.LoadCollectorStateAsync(ct); var c=f.CreateClient(); c.DefaultRequestHeaders.Authorization=new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer",token);
-var maxResults=Math.Clamp(o.Value.Sources.XMaxResults,10,100); foreach(var q in o.Value.Sources.XQueries){var since=st.TryGetValue($"x:{q}",out var x)?x:null; var url=$"https://api.twitter.com/2/tweets/search/recent?max_results={maxResults}&tweet.fields=created_at&query={Uri.EscapeDataString(q)}"+(since!=null?$"&since_id={since}":""); try{var r=await c.GetAsync(url,ct); if((int)r.StatusCode==429){await Task.Delay(2000,ct); continue;} r.EnsureSuccessStatusCode(); using var doc=JsonDocument.Parse(await r.Content.ReadAsStringAsync(ct)); foreach(var t in doc.RootElement.GetProperty("data").EnumerateArray()){var id=t.GetProperty("id").GetString()??""; st[$"x:{q}"]=id; res.Items.Add(new SourceItem{SourceType=Name,Id=id,Url=$"https://x.com/i/web/status/{id}",Title=t.GetProperty("text").GetString()??"",Content=t.GetProperty("text").GetString()??"",PublishedAt=t.TryGetProperty("created_at",out var ca)?ca.GetDateTimeOffset():DateTimeOffset.UtcNow});}}catch(Exception ex){l.LogWarning(ex,"x query failed");}}
-await ss.SaveCollectorStateAsync(st,ct); return res;}}
-public class RedditCollector(IHttpClientFactory f,IOptions<AppSettings> o):ISourceCollector{public string Name=>"reddit"; public bool IsEnabled(AppSettings c)=>c.Sources.EnableReddit; public async Task<CollectorResult> CollectAsync(CancellationToken ct){var r=new CollectorResult(); foreach(var s in o.Value.Sources.RedditSubreddits){var url=$"https://www.reddit.com/r/{s}/.rss"; try{using var st=await f.CreateClient().GetStreamAsync(url,ct); using var xr=XmlReader.Create(st); var feed=SyndicationFeed.Load(xr); if(feed==null) continue; r.Items.AddRange(feed.Items.Select(i=>new SourceItem{SourceType=Name,Id=i.Id,Url=i.Links.FirstOrDefault()?.Uri.ToString()??"",Title=i.Title?.Text??"",Content=i.Summary?.Text??"",PublishedAt=i.PublishDate}));}catch{}} return r;}}
-public class WebPageCollector(IHttpClientFactory f,IOptions<AppSettings> o,StateStore ss):ISourceCollector{public string Name=>"webpages"; public bool IsEnabled(AppSettings c)=>c.Sources.EnableWebPages; public async Task<CollectorResult> CollectAsync(CancellationToken ct){var r=new CollectorResult(); var st=await ss.LoadCollectorStateAsync(ct); foreach(var u in o.Value.Sources.WebPageUrls){try{var html=await f.CreateClient().GetStringAsync(u,ct); var text=System.Text.RegularExpressions.Regex.Replace(html,"<[^>]+>"," "); var hash=Hashing.Sha256(text); if(st.TryGetValue($"web:{u}",out var h)&&h==hash) continue; st[$"web:{u}"]=hash; r.Items.Add(new SourceItem{SourceType=Name,Id=hash,Url=u,Title=Extract(html,"<title>","</title>"),Content=text});}catch{}} await ss.SaveCollectorStateAsync(st,ct); return r;} string Extract(string s,string a,string b){var i=s.IndexOf(a,StringComparison.OrdinalIgnoreCase); if(i<0) return ""; var j=s.IndexOf(b,i,StringComparison.OrdinalIgnoreCase); return j>i?s[(i+a.Length)..j].Trim():"";}}
+namespace PiSignalWatch.Collectors;
+
+using System.Net;
+using System.ServiceModel.Syndication;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Xml;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using PiSignalWatch.Config;
+using PiSignalWatch.Models;
+using PiSignalWatch.Storage;
+using PiSignalWatch.Utilities;
+
+public interface ISourceCollector
+{
+    string Name { get; }
+    bool IsEnabled(AppSettings c);
+    Task<CollectorResult> CollectAsync(CancellationToken ct);
+}
+
+public class RssCollector(IHttpClientFactory f, IOptions<AppSettings> o) : ISourceCollector
+{
+    public string Name => "rss";
+    public bool IsEnabled(AppSettings c) => c.Sources.EnableRss;
+
+    public async Task<CollectorResult> CollectAsync(CancellationToken ct)
+    {
+        var outp = new CollectorResult();
+        foreach (var u in o.Value.Sources.RssFeeds)
+        {
+            try
+            {
+                using var s = await f.CreateClient().GetStreamAsync(u, ct);
+                using var xr = XmlReader.Create(s);
+                var feed = SyndicationFeed.Load(xr);
+                if (feed == null) continue;
+                outp.Items.AddRange(feed.Items.Select(i => new SourceItem
+                {
+                    SourceType = Name,
+                    Id = i.Id ?? i.Links.FirstOrDefault()?.Uri.ToString() ?? Guid.NewGuid().ToString(),
+                    Url = i.Links.FirstOrDefault()?.Uri.ToString() ?? "",
+                    Title = i.Title?.Text ?? "",
+                    Content = i.Summary?.Text ?? i.Content?.ToString() ?? "",
+                    PublishedAt = i.PublishDate
+                }));
+            }
+            catch
+            {
+            }
+        }
+
+        return outp;
+    }
+}
+
+public class XApiCollector(IHttpClientFactory f, IOptions<AppSettings> o, StateStore ss, ILogger<XApiCollector> l) : ISourceCollector
+{
+    public string Name => "x";
+    public bool IsEnabled(AppSettings c) => c.Sources.EnableX;
+
+    public async Task<CollectorResult> CollectAsync(CancellationToken ct)
+    {
+        var token = Environment.GetEnvironmentVariable("X_BEARER_TOKEN");
+        var res = new CollectorResult();
+        if (string.IsNullOrWhiteSpace(token)) return res;
+        var st = await ss.LoadCollectorStateAsync(ct);
+        var c = f.CreateClient();
+        c.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        var maxResults = Math.Clamp(o.Value.Sources.XMaxResults, 10, 100);
+        foreach (var q in o.Value.Sources.XQueries)
+        {
+            var since = st.TryGetValue($"x:{q}", out var x) ? x : null;
+            var url = $"https://api.twitter.com/2/tweets/search/recent?max_results={maxResults}&tweet.fields=created_at&query={Uri.EscapeDataString(q)}" + (since != null ? $"&since_id={since}" : "");
+            try
+            {
+                var r = await c.GetAsync(url, ct);
+                if ((int)r.StatusCode == 429)
+                {
+                    await Task.Delay(2000, ct);
+                    continue;
+                }
+
+                r.EnsureSuccessStatusCode();
+                using var doc = JsonDocument.Parse(await r.Content.ReadAsStringAsync(ct));
+                foreach (var t in doc.RootElement.GetProperty("data").EnumerateArray())
+                {
+                    var id = t.GetProperty("id").GetString() ?? "";
+                    st[$"x:{q}"] = id;
+                    res.Items.Add(new SourceItem
+                    {
+                        SourceType = Name,
+                        Id = id,
+                        Url = $"https://x.com/i/web/status/{id}",
+                        Title = t.GetProperty("text").GetString() ?? "",
+                        Content = t.GetProperty("text").GetString() ?? "",
+                        PublishedAt = t.TryGetProperty("created_at", out var ca) ? ca.GetDateTimeOffset() : DateTimeOffset.UtcNow
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                l.LogWarning(ex, "x query failed");
+            }
+        }
+
+        await ss.SaveCollectorStateAsync(st, ct);
+        return res;
+    }
+}
+
+public class RedditCollector(IHttpClientFactory f, IOptions<AppSettings> o) : ISourceCollector
+{
+    public string Name => "reddit";
+    public bool IsEnabled(AppSettings c) => c.Sources.EnableReddit;
+
+    public async Task<CollectorResult> CollectAsync(CancellationToken ct)
+    {
+        var r = new CollectorResult();
+        foreach (var s in o.Value.Sources.RedditSubreddits)
+        {
+            var url = $"https://www.reddit.com/r/{s}/.rss";
+            try
+            {
+                using var st = await f.CreateClient().GetStreamAsync(url, ct);
+                using var xr = XmlReader.Create(st);
+                var feed = SyndicationFeed.Load(xr);
+                if (feed == null) continue;
+                r.Items.AddRange(feed.Items.Select(i => new SourceItem
+                {
+                    SourceType = Name,
+                    Id = i.Id,
+                    Url = i.Links.FirstOrDefault()?.Uri.ToString() ?? "",
+                    Title = i.Title?.Text ?? "",
+                    Content = i.Summary?.Text ?? "",
+                    PublishedAt = i.PublishDate
+                }));
+            }
+            catch
+            {
+            }
+        }
+
+        return r;
+    }
+}
+
+public class WebPageCollector(IHttpClientFactory f, IOptions<AppSettings> o, StateStore ss) : ISourceCollector
+{
+    static readonly Regex Comments = new("<!--.*?-->", RegexOptions.Singleline | RegexOptions.Compiled);
+    static readonly Regex NonContentBlocks = new("<(head|script|style|noscript|svg|template)[^>]*>.*?</\\1>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+    static readonly Regex Tags = new("<[^>]+>", RegexOptions.Compiled);
+    static readonly Regex EscapedLineBreaks = new("\\\\[rn]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    static readonly Regex Whitespace = new("\\s+", RegexOptions.Compiled);
+
+    public string Name => "webpages";
+    public bool IsEnabled(AppSettings c) => c.Sources.EnableWebPages;
+
+    public async Task<CollectorResult> CollectAsync(CancellationToken ct)
+    {
+        var r = new CollectorResult();
+        var st = await ss.LoadCollectorStateAsync(ct);
+        foreach (var u in o.Value.Sources.WebPageUrls)
+        {
+            try
+            {
+                var html = await f.CreateClient().GetStringAsync(u, ct);
+                var text = CleanHtmlContent(html);
+                var hash = Hashing.Sha256(text);
+                if (st.TryGetValue($"web:{u}", out var h) && h == hash) continue;
+                st[$"web:{u}"] = hash;
+                r.Items.Add(new SourceItem { SourceType = Name, Id = hash, Url = u, Title = Extract(html, "<title>", "</title>"), Content = text });
+            }
+            catch
+            {
+            }
+        }
+
+        await ss.SaveCollectorStateAsync(st, ct);
+        return r;
+    }
+
+    public static string CleanHtmlContent(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return string.Empty;
+
+        var text = Comments.Replace(html, " ");
+        text = NonContentBlocks.Replace(text, " ");
+        text = Tags.Replace(text, " ");
+        text = WebUtility.HtmlDecode(text);
+        text = EscapedLineBreaks.Replace(text, " ");
+        return Whitespace.Replace(text, " ").Trim();
+    }
+
+    string Extract(string s, string a, string b)
+    {
+        var i = s.IndexOf(a, StringComparison.OrdinalIgnoreCase);
+        if (i < 0) return "";
+        var j = s.IndexOf(b, i, StringComparison.OrdinalIgnoreCase);
+        return j > i ? CleanHtmlContent(s[(i + a.Length)..j]) : "";
+    }
+}
