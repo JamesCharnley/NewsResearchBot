@@ -71,6 +71,12 @@ public class Worker : BackgroundService
                 processed = await p.ProcessAsync(processed, _cfg, ct);
             }
 
+            _log.LogInformation("Collected {rawCount} raw items; {processedCount} processed items after filtering", raw.Count, processed.Count);
+            if (processed.Count == 0)
+            {
+                _log.LogWarning("No processed items are available for this cycle. Check enabled sources, topic keywords, collector warnings, and duplicate suppression.");
+            }
+
             var digest = _digestBuilder.Build(processed);
             digest.Summary = await _summ.SummariseAsync(processed, _cfg, ct);
 
@@ -104,6 +110,7 @@ public class Worker : BackgroundService
         try
         {
             var rssResult = await rssCollector.CollectAsync(ct);
+            raw.AddRange(rssResult.Items);
             await _storage.SaveRawItemsAsync(rssCollector.Name, rssResult.Items, ct);
 
             var scoredRssItems = rssResult.Items

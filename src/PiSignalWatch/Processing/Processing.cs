@@ -80,8 +80,10 @@ public class DigestBuilder
 
 public class OpenAiSummariser(IHttpClientFactory f, ILogger<OpenAiSummariser> log)
 {
+    const string EmptyDigestMessage = "No matching items were collected this cycle. Check enabled sources, topic keywords, and collector warnings.";
     public async Task<string> SummariseAsync(List<ProcessedItem> items, AppSettings cfg, CancellationToken ct)
     {
+        if (items.Count == 0) return EmptyDigestMessage;
         if (!cfg.OpenAi.Enabled) return Fallback(items);
 
         var key = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -143,7 +145,9 @@ public class OpenAiSummariser(IHttpClientFactory f, ILogger<OpenAiSummariser> lo
     }
 
     string Fallback(List<ProcessedItem> items) =>
-        string.Join("\n", items
+        items.Count == 0
+            ? EmptyDigestMessage
+            : string.Join("\n", items
             .GroupBy(i => i.TopicMatches.FirstOrDefault()?.Topic ?? "General")
             .Select(g => $"{g.Key}: {string.Join("; ", g.Take(5).Select(x => x.Source.Title + " (" + x.Source.Url + ")"))}"));
 }
