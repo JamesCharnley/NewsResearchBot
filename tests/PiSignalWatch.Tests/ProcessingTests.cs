@@ -146,9 +146,26 @@ public class ProcessingTests
         var summariser = new OpenAiSummariser(new FakeHttpClientFactory(httpClient), NullLogger<OpenAiSummariser>.Instance);
         var cfg = new AppSettings { OpenAi = new OpenAiConfig { Enabled = true, Model = "gpt-test" } };
 
-        var summary = await summariser.SummariseAsync([], cfg, default);
+        var items = new List<ProcessedItem> { new() { Source = new() { Title = "Source title", Url = "https://example.com" } } };
+
+        var summary = await summariser.SummariseAsync(items, cfg, default);
 
         Assert.Equal("Clean digest content", summary);
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", null);
+    }
+
+
+    [Fact]
+    public async Task OpenAiSummariserDoesNotCallOpenAiWhenItemsAreEmpty()
+    {
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        var httpClient = new HttpClient(new ThrowingHandler());
+        var summariser = new OpenAiSummariser(new FakeHttpClientFactory(httpClient), NullLogger<OpenAiSummariser>.Instance);
+        var cfg = new AppSettings { OpenAi = new OpenAiConfig { Enabled = true, Model = "gpt-test" } };
+
+        var summary = await summariser.SummariseAsync([], cfg, default);
+
+        Assert.Equal("No matching items were collected this cycle. Check enabled sources, topic keywords, and collector warnings.", summary);
         Environment.SetEnvironmentVariable("OPENAI_API_KEY", null);
     }
 
@@ -165,6 +182,12 @@ public class ProcessingTests
     private sealed class FakeHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;
+    }
+
+    private sealed class ThrowingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, System.Threading.CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("OpenAI should not be called when there are no processed items.");
     }
 
     private sealed class StaticJsonHandler(string content) : HttpMessageHandler
